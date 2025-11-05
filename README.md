@@ -1,6 +1,6 @@
 # 🕵️ Spy Game AI Edition (Kivy Mobile Game)
 
-**Word Spyfall AI Edition** is a full-featured Kivy-based mobile implementation of the popular social deduction game, Spyfall. This project elevates the standard game by integrating the **Gemini API** for dynamic content generation, ensuring endless replayability and a fresh experience every time.
+**Spy Game AI Edition** is a full-featured Kivy-based mobile implementation of the popular social deduction game, Spy, but with a few in-house rules added. This project elevates the standard game by integrating the **Gemini API** for dynamic content generation, ensuring endless replayability and a fresh experience every time.
 
 The application is built entirely in Python using the Kivy framework, resulting in a stable, visually polished, and cross-platform mobile application ready for Android deployment.
 
