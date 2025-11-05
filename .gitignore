@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.pyc
+*.o
+*.so
+*.egg
+*.egg-info
+.venv/
+venv/
+spy/
+.mypy_cache/
+.pytest_cache/
+.vscode/
+
+# Buildozer / Kivy Deployment
+.buildozer/
+bin/
+*.apk
+*.ipa
+
+# Kivy / Data Store
+# Exclude Kivy's temporary data storage files.
+# If you want to include default player_library.json and topic_data.json,
+# you should remove the two lines below, as they are currently in your list of files to upload.
+# *.json
+
+# IDE/OS generated files
+.DS_Store
+Thumbs.db
