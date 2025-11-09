@@ -23,10 +23,6 @@ from kivy.graphics import Color, Rectangle
 import math # Import math for ceiling division logic
 
 # Ensure responsive design for mobile (Kivy-specific setup)
-# Config.set('graphics', 'width', '400')
-# Config.set('graphics', 'height', '600')
-# Window.size = (400, 600) # Default size for desktop testing
-
 from kivy.utils import platform
 
 if platform == "android":
@@ -42,6 +38,7 @@ TEXT_SECONDARY = (0.7, 0.7, 0.7, 1) # Light grey text
 ACCENT_BLUE = (0.3, 0.7, 0.9, 1) # Blue for Gemini
 ACCENT_RED = (0.8, 0.3, 0.3, 1) # Red for Accuse
 ACCENT_GREEN = (0.3, 0.8, 0.3, 1) # Green for Next Turn
+ACCENT_YELLOW = (0.9, 0.8, 0.2, 1) # Yellow for single round
 
 # Function to convert float RGB (0-1) to hex string (#RRGGBB)
 def rgb_to_hex(r, g, b):
@@ -50,6 +47,8 @@ def rgb_to_hex(r, g, b):
 
 # Pre-calculate the correct hex color tag string for use in .format() calls
 TEXT_COLOR_TAG = rgb_to_hex(TEXT_PRIMARY[0], TEXT_PRIMARY[1], TEXT_PRIMARY[2])
+# New hex color for accused players in single round mode (Yellow/Orange)
+ACCUSED_COLOR_HEX = '#ffff99'
 
 # --- Gemini API Configuration ---
 # Leave the key as an empty string; the execution environment will provide credentials.
@@ -94,8 +93,8 @@ class SpyGame(BoxLayout):
     time_remaining = NumericProperty(0)
     timer_event = None
 
-    # Property for the current game mode
-    game_mode = StringProperty("EASY") # EASY (Spies can guess) or HARD (Spies must survive)
+    # Property for the current game mode. Added "SINGLE_ROUND".
+    game_mode = StringProperty("EASY") # EASY, HARD, or SINGLE_ROUND
 
     # UI element for Gemini feedback
     gemini_status = StringProperty("")
@@ -147,6 +146,9 @@ class SpyGame(BoxLayout):
         self.used_words_in_current_category = set()
         # Tracks total words used per category across all rounds of this session
         self.total_used_words = {cat: set() for cat in GAME_TOPICS.keys()}
+
+        # Single Round Mode State
+        self.single_round_accusations = set() # To track the player indices accused in SR mode
 
         # --- UI Initialization ---
         self.sm = ScreenManager()
@@ -249,28 +251,36 @@ class SpyGame(BoxLayout):
         )
         layout.add_widget(title)
 
-        # --- Game Mode Selector ---
-        layout.add_widget(self.wrap_label(text="Game Mode (Spy Win Condition):", size_hint_y=None, color=TEXT_SECONDARY))
+        # --- Game Mode Selector (Updated for SINGLE ROUND) ---
+        layout.add_widget(self.wrap_label(text="Game Mode Selection:", size_hint_y=None, color=TEXT_SECONDARY))
         mode_control_layout = BoxLayout(size_hint_y=None, height=dp(50), spacing=dp(10))
 
         btn_easy = self.wrap_button(
-            text="EASY MODE (Can Guess)",
+            text="EASY",
             on_press=lambda x: self.set_game_mode("EASY"),
             height=dp(120),
             background_color=ACCENT_GREEN if self.game_mode == "EASY" else LIGHT_BG
         )
         btn_hard = self.wrap_button(
-            text="HARD MODE (Must Survive)",
+            text="HARD",
             on_press=lambda x: self.set_game_mode("HARD"),
             height=dp(120),
             background_color=ACCENT_RED if self.game_mode == "HARD" else LIGHT_BG
         )
+        btn_single = self.wrap_button(
+            text="SINGLE ROUND",
+            on_press=lambda x: self.set_game_mode("SINGLE_ROUND"),
+            height=dp(120),
+            background_color=ACCENT_YELLOW if self.game_mode == "SINGLE_ROUND" else LIGHT_BG
+        )
 
         self.btn_easy_mode = btn_easy
         self.btn_hard_mode = btn_hard
+        self.btn_single_mode = btn_single
 
         mode_control_layout.add_widget(btn_easy)
         mode_control_layout.add_widget(btn_hard)
+        mode_control_layout.add_widget(btn_single) # Add the new button
         layout.add_widget(mode_control_layout)
         # --- END : Game Mode Selector ---
 
@@ -288,7 +298,7 @@ class SpyGame(BoxLayout):
         player_control_layout.add_widget(btn_plus)
         layout.add_widget(player_control_layout)
 
-        # NEW: Spy Count Selector
+        # Spy Count Selector
         layout.add_widget(self.wrap_label(text="Number of Spies (Max 1/3 Players):", size_hint_y=None, color=TEXT_SECONDARY))
         spy_control_layout = BoxLayout(size_hint_y=None, height=dp(50), spacing=dp(10))
 
@@ -318,7 +328,7 @@ class SpyGame(BoxLayout):
             height=dp(250) # INCREASE HEIGHT to fit 4 buttons
         )
 
-        # NEW: Library Button
+        # Library Button
         btn_library = self.wrap_button(
             text="OPEN PLAYER LIBRARY",
             size_hint_y=None,
@@ -383,6 +393,7 @@ class SpyGame(BoxLayout):
         # Update button colors dynamically
         self.btn_easy_mode.background_color = ACCENT_GREEN if mode == "EASY" else LIGHT_BG
         self.btn_hard_mode.background_color = ACCENT_RED if mode == "HARD" else LIGHT_BG
+        self.btn_single_mode.background_color = ACCENT_YELLOW if mode == "SINGLE_ROUND" else LIGHT_BG
 
     def show_library_manager_popup(self, instance=None):
         content = BoxLayout(orientation='vertical', padding=dp(20), spacing=dp(10))
@@ -628,7 +639,7 @@ class SpyGame(BoxLayout):
         )
         layout.add_widget(self.lbl_pass_device)
 
-        # NEW: Neutral instruction text (removed reference to 'secret' to support game start screen)
+        # Neutral instruction text
         self.lbl_player_info = self.wrap_label(text="Tap 'View Role' to check your identity.", size_hint_y=None, height=dp(50), color=TEXT_SECONDARY)
         layout.add_widget(self.lbl_player_info)
 
@@ -780,6 +791,7 @@ class SpyGame(BoxLayout):
         content.canvas.before.add(kivy.graphics.Color(*LIGHT_BG))
         content.canvas.before.add(kivy.graphics.Rectangle(size=content.size, pos=content.pos))
 
+        w = Window.width # Use window width for text_size calculation
         content.add_widget(
             self.wrap_label(
                 text="Are you sure you want to end the game? All progress will be lost.",
@@ -915,22 +927,25 @@ class SpyGame(BoxLayout):
 
         self.current_player_index = 0 # Start with the first player in the randomized order
 
-        # --- Perform FIRST ROUND START SKEWING LOGIC HERE ---
-        # Skews the first turn starter away from a Spy (85% chance) for better game balance.
-        active_player_indices = list(range(self.player_count))
-        start_idx = random.choice(active_player_indices)
-        is_start_spy = self.players[start_idx]['is_spy']
+        # --- Perform FIRST ROUND START SKEWING LOGIC HERE (Only for long modes) ---
+        if self.game_mode != "SINGLE_ROUND":
+            # Skews the first turn starter away from a Spy (85% chance) for better game balance.
+            active_player_indices = list(range(self.player_count))
+            start_idx = random.choice(active_player_indices)
+            is_start_spy = self.players[start_idx]['is_spy']
 
-        # Skewing logic: 85% chance to re-roll if the starting player is a Spy
-        if is_start_spy and random.random() < 0.85:
-            local_indices = [i for i in active_player_indices if not self.players[i]['is_spy']]
-            if local_indices:
-                self.first_round_starter_index = random.choice(local_indices)
+            # Skewing logic: 85% chance to re-roll if the starting player is a Spy
+            if is_start_spy and random.random() < 0.85:
+                local_indices = [i for i in active_player_indices if not self.players[i]['is_spy']]
+                if local_indices:
+                    self.first_round_starter_index = random.choice(local_indices)
+                else:
+                    self.first_round_starter_index = start_idx # Keep Spy if no Locals left
             else:
-                self.first_round_starter_index = start_idx # Keep Spy if no Locals left
+                self.first_round_starter_index = start_idx
         else:
-             self.first_round_starter_index = start_idx
-
+            # Single Round mode doesn't need turn skewing, set starter arbitrarily
+            self.first_round_starter_index = 0
         # --- END FIRST ROUND START SKEWING LOGIC ---
 
         self.current_player_index = 0 # Start with the first player in the randomized order
@@ -997,17 +1012,26 @@ class SpyGame(BoxLayout):
             # Ensure view role button is visible
             self.lbl_player_info.text = "Tap 'View Role' to check your identity."
         else:
-            # All roles revealed, this is the start of the game turn sequence
-            self.current_player_index = 0 # Reset to the start of the natural order for turns
-            self.current_player_name = self.players[self.current_player_index]['name']
+            # All roles revealed. Transition to the next phase based on game mode.
 
-            # NEW: Neutral screen for game start
+            # --- SINGLE ROUND MODE ACTIVATION ---
+            if self.game_mode == "SINGLE_ROUND":
+                self.single_round_accusations = set() # Reset accusation tracker
+                self.show_single_round_accusation_popup()
+                return
+            # --- END SINGLE ROUND MODE ACTIVATION ---
+
+            # Standard Modes (EASY/HARD): Start the discussion phase.
+            self.current_player_index = 0 # Reset to the start of the natural order for turns
+            self.current_player_name = self.players[self.first_round_starter_index]['name']
+
+            # Neutral screen for game start
             self.lbl_pass_device.text = (
                 f"[b]IT IS NOW TIME TO BEGIN![/b]\n"
                 f"[color={TEXT_COLOR_TAG}][size=30sp]Pass Device to {self.current_player_name}[/size][/color]"
             )
-            # NEW: Change instruction to reflect that the viewing phase is over
-            self.lbl_player_info.text = "All roles assigned. Tap 'Finished Viewing' to start the first turn."
+            # Change instruction to reflect that the viewing phase is over
+            self.lbl_player_info.text = "All roles assigned. Tap 'Finished Viewing - Hide Role' to start the first turn."
 
     def show_role_popup(self, instance):
         # Use the index from the shuffled list if still in the assignment phase
@@ -1037,16 +1061,22 @@ class SpyGame(BoxLayout):
             else:
                 role_text += "You are the only Spy this round.\n\n"
 
-            main_info = f"Category: [b]{self.current_category}[/b]\n\nSecret Word: [color=ff5555]???[/color]\n\nGoal: Use your allies' vague clues to guess the word."
+            main_info = f"Category: [b]{self.current_category}[/b]\n\nSecret Word: [color=ff5555]???[/color]\n\nGoal: Bluff and guess the word."
 
             if self.game_mode == "EASY":
                  main_info += "\n[color=ffff00]Mode: Easy (Final Guess Available)[/color]"
-            else:
+            elif self.game_mode == "HARD":
                  main_info += "\n[color=ffff00]Mode: Hard (Survive Only)[/color]"
+            elif self.game_mode == "SINGLE_ROUND":
+                 main_info += "\n[color=ffff00]Mode: Single Round (No Turns, Instant Accusation)[/color]"
+
 
         else:
             role_text = "[b][color=55ff55]YOU ARE A LOCAL[/color][/b]\n\nYour Goal: Find the Spy without revealing the Secret Word."
             main_info = f"Category: [b]{self.current_category}[/b]\n\nSecret Word: [b][size=30sp]{self.secret_word}[/size][/b]"
+            if self.game_mode == "SINGLE_ROUND":
+                 main_info += "\n[color=ffff00]Mode: Single Round (No Turns, Instant Accusation)[/color]"
+
 
         # Display the current player's name clearly at the top of the secret role pop-up
         player_label = Label(text=f"[b]Name:[/b] [color={TEXT_COLOR_TAG}][size=22sp]{player_data['name']}[/size][/color]",
@@ -1088,22 +1118,146 @@ class SpyGame(BoxLayout):
             self.update_role_assignment_screen()
         else:
             # All roles have been seen (end of randomized list)
-            active_player_indices = list(range(self.player_count))
-            # Start with a random index
-            start_idx = random.choice(active_player_indices)
-            is_start_spy = self.players[start_idx]['is_spy']
 
-            # 85% chance to re-roll if the starting player is a Spy
-            if is_start_spy and random.random() < 0.85:
-                # Filter for Locals and choose one if available, otherwise keep the Spy
-                local_indices = [i for i in active_player_indices if not self.players[i]['is_spy']]
-                if local_indices:
-                    start_idx = random.choice(local_indices)
+            # --- SINGLE ROUND MODE: Move to Accusation ---
+            if self.game_mode == "SINGLE_ROUND":
+                self.single_round_accusations = set() # Reset accusation tracker
+                self.show_single_round_accusation_popup()
+                return
+            # --- END SINGLE ROUND MODE ---
 
+            # Standard Modes (EASY/HARD): Start the discussion phase.
             self.current_player_index = self.first_round_starter_index # Set the starting player index for Round 1
-
             self.update_game_screen() # Sets up the first turn
             self.sm.current = 'game_play'
+
+    # --- SINGLE ROUND MODE ACCUSATION HANDLER ---
+    def show_single_round_accusation_popup(self):
+        # This is the main screen for the Single Round Mode.
+        content = BoxLayout(orientation='vertical', padding=dp(20), spacing=dp(20))
+        content.canvas.before.add(kivy.graphics.Color(*LIGHT_BG))
+        content.canvas.before.add(kivy.graphics.Rectangle(size=content.size, pos=content.pos))
+
+        accused_count = len(self.single_round_accusations)
+        required_count = self.spy_count
+
+        # Build the list of accused player names with the new color
+        accused_names = [self.players[i]['name'] for i in self.single_round_accusations]
+        accused_list_str = f"[color={ACCUSED_COLOR_HEX}]{', '.join(accused_names)}[/color]"
+
+        if accused_count == 0:
+            instruction_text = (
+                f"[b]SINGLE ROUND MODE ACTIVE[/b]\n\n"
+                f"Discussion is over! The Town must now collectively identify {required_count} Spies "
+                f"by making exactly {required_count} accusation(s)."
+            )
+        else:
+            # Display already accused players with the new bright color
+            instruction_text = (
+                f"[b]ACCUSATION {accused_count} of {required_count}[/b]\n\n"
+                f"You have already accused: {accused_list_str}\n\n"
+                f"Choose the next person to accuse."
+            )
+
+        content.add_widget(self.wrap_label(
+            text=instruction_text,
+            size_hint_y=None,
+            color=TEXT_PRIMARY,
+            font_size='18sp',
+            height=dp(100)
+        ))
+
+        # --- Scrollable Player List Setup ---
+        player_list_container = BoxLayout(orientation='vertical', spacing=dp(5), size_hint_y=None)
+
+        # Only show players who have NOT been accused yet
+        available_players = [
+            (i, p) for i, p in enumerate(self.players)
+            if i not in self.single_round_accusations
+        ]
+
+        # Set height based on number of available players
+        player_list_container.height = len(available_players) * dp(55)
+
+        for original_index, player in available_players:
+            # Buttons are always red (accusation button color)
+            btn = Button(
+                text=player['name'],
+                on_press=lambda x, p_index=original_index: self.record_single_round_accusation(p_index, self.single_round_popup),
+                size_hint_y=None, height=dp(50), background_color=ACCENT_RED
+            )
+            player_list_container.add_widget(btn)
+
+        # 3. ScrollView to wrap the inner BoxLayout
+        scroll_view = ScrollView(size_hint_y=0.7, do_scroll_x=False)
+        scroll_view.add_widget(player_list_container)
+
+        content.add_widget(scroll_view)
+        # --- END Player List Setup ---
+
+        btn_quit = self.wrap_button(text="END GAME (Quit to Setup)", on_press=lambda x: self.quit_game(self.single_round_popup, preserve_config=True), background_color=ACCENT_RED, size_hint_y=0.2, height=dp(60))
+        content.add_widget(btn_quit)
+
+        self.single_round_popup = Popup(title=f'ACCUSATION ({accused_count} of {required_count})', content=content, size_hint=(0.8, 0.9), auto_dismiss=False)
+        self.single_round_popup.open()
+
+    def record_single_round_accusation(self, accused_index, popup):
+        """Records an accusation and either loops or resolves the game."""
+
+        self.single_round_accusations.add(accused_index)
+
+        if len(self.single_round_accusations) < self.spy_count:
+            # Not enough accusations made, refresh the popup to choose the next one
+            popup.dismiss()
+            self.show_single_round_accusation_popup()
+        else:
+            # All required accusations have been made, resolve the round
+            popup.dismiss()
+            self.resolve_single_round_accusation()
+
+    def resolve_single_round_accusation(self):
+        """Checks if the accused set perfectly matches the spy set."""
+
+        spy_indices = {i for i, p in enumerate(self.players) if p['is_spy']}
+
+        # The accusations must exactly match the spy indices
+        correctly_identified_spies = self.single_round_accusations.intersection(spy_indices)
+
+        is_local_win = len(correctly_identified_spies) == self.spy_count and len(self.single_round_accusations) == self.spy_count
+
+        if is_local_win:
+            # Locals win: Guessed all spies and no locals.
+            result_text = (
+                f"PERFECT ACCUSATION!\n\n"
+                f"The town correctly identified all {self.spy_count} Spies: "
+                f"[b]{', '.join(self.players[i]['name'] for i in spy_indices)}[/b].\n\n"
+                f"[b]LOCALS WIN![/b]"
+            )
+            self.show_result_popup("Locals", result_text)
+        else:
+            # Spies win: Either a local was wrongly accused, or a spy was missed.
+            missed_spies = spy_indices - self.single_round_accusations
+            wrongly_accused_locals = self.single_round_accusations - spy_indices
+
+            summary = []
+            if missed_spies:
+                summary.append(f"{len(missed_spies)} Spy(s) missed.")
+            if wrongly_accused_locals:
+                summary.append(f"{len(wrongly_accused_locals)} Local(s) wrongly accused.")
+
+            result_text = (
+                f"MISSION FAILED!\n\n"
+                f"The Town was unable to identify all spies correctly in a single round. ({' & '.join(summary)})\n\n"
+                f"The Spies were: [b]{', '.join(self.players[i]['name'] for i in spy_indices)}[/b].\n"
+                f"The Secret Word was: [b]{self.secret_word}[/b].\n\n"
+                f"[b]SPIES WIN![/b]"
+            )
+
+            # Since it's Single Round, Spies win automatically if the Locals fail
+            self.show_result_popup("Spy", result_text)
+
+    # --- END SINGLE ROUND MODE HANDLER ---
+
 
     def start_timer(self, minutes):
         self.time_remaining = minutes * 60
@@ -1119,6 +1273,12 @@ class SpyGame(BoxLayout):
             self.end_game_by_time()
 
     def update_game_screen(self):
+        # This function is ONLY used by EASY/HARD modes
+        if self.game_mode == "SINGLE_ROUND":
+            # This should never be called in SR mode after role assignment, but included for safety.
+            self.show_single_round_accusation_popup()
+            return
+
         # --- Skip inactive players and loop until an active player is found ---
         max_attempts = self.player_count  # Prevent infinite loop if all players are inactive
 
@@ -1157,13 +1317,11 @@ class SpyGame(BoxLayout):
         if self.lbl_turn_instruction.width > 0:
             self.lbl_turn_instruction.text_size = (self.lbl_turn_instruction.width * 0.95, None)
 
-        # 3. Disable role check button after role assignment phase is done.
-        # This prevents players from checking their word mid-game (as requested).
+        # 3. Ensure check role and accuse buttons are enabled/visible for continuous play
         self.btn_check_role.disabled = False
         self.btn_check_role.text = "CHECK YOUR ROLE / SECRET WORD"
         self.btn_check_role.background_color = ACCENT_BLUE
 
-        # 4. Set Accuse button to full width
         self.btn_accuse.size_hint_x = 1.0
         self.btn_accuse.disabled = False
         self.btn_accuse.background_color = ACCENT_RED
@@ -1180,16 +1338,22 @@ class SpyGame(BoxLayout):
         self.lbl_player_info.text = "Tap 'Finished Viewing - Hide Role' to start your turn in the game."
 
     def next_turn(self, instance=None):
-        # CRITICAL FIX 4: Advance the index BEFORE calling update_game_screen
-        # to ensure the next player's information is loaded for the turn sequence.
+        # This function is ONLY used by EASY/HARD modes
+        if self.game_mode == "SINGLE_ROUND":
+            # Prevent next_turn from running if accidentally triggered in SR mode
+            return
+
+        # Advance the index BEFORE calling update_game_screen
         self.current_player_index = (self.current_player_index + 1) % self.player_count
 
-        # Check if the next player is the one whose turn was just resolved (Player 1)
-        # If the round is already progressing, this just calls the next player.
-        # If the round was stuck (Player 1 -> Player 1), this loop correction moves past the stuck state.
         self.update_game_screen()
 
     def show_accuse_popup(self, instance):
+        # This function is ONLY used by EASY/HARD modes
+        if self.game_mode == "SINGLE_ROUND":
+            self.show_single_round_accusation_popup()
+            return
+
         # BoxLayout does not support background_color property
         content = BoxLayout(orientation='vertical', padding=dp(20), spacing=dp(20))
         content.canvas.before.add(kivy.graphics.Color(*LIGHT_BG))
@@ -1215,7 +1379,7 @@ class SpyGame(BoxLayout):
                 btn = Button(
                     text=player['name'],
                     on_press=lambda x, p_index=original_index: self.resolve_accusation(p_index, popup),
-                    size_hint_y=None, height=dp(50), background_color=(0.7, 0.2, 0.2, 1)
+                    size_hint_y=None, height=dp(50), background_color=ACCENT_RED
                 )
                 player_list_container.add_widget(btn)
 
@@ -1224,7 +1388,7 @@ class SpyGame(BoxLayout):
         scroll_view.add_widget(player_list_container)
 
         content.add_widget(scroll_view) # Add scrollable area to pop-up content
-        # --- END IMAGE 2 FIX ---
+        # --- END Player List Setup ---
 
         btn_cancel = self.wrap_button(text="CANCEL ACCUSATION (Resume Game)", on_press=lambda x: self.resume_game(popup), background_color=ACCENT_GREEN, size_hint_y=0.2, height=dp(60))
         content.add_widget(btn_cancel)
@@ -1233,6 +1397,10 @@ class SpyGame(BoxLayout):
         popup.open()
 
     def check_win_conditions(self):
+        # This function is ONLY used by EASY/HARD modes
+        if self.game_mode == "SINGLE_ROUND":
+            return False # SR mode uses resolve_single_round_accusation
+
         # Correctly count active spies and locals currently in the game
         active_spies = sum(1 for p in self.players if p['is_spy'] and p.get('is_spy_active', True))
         active_locals = sum(1 for p in self.players if not p['is_spy'] and p.get('is_spy_active', True))
@@ -1250,6 +1418,13 @@ class SpyGame(BoxLayout):
         return False
 
     def resolve_accusation(self, accused_index, popup):
+        # This function is ONLY used by EASY/HARD modes
+        if self.game_mode == "SINGLE_ROUND":
+            # Fallback prevention
+            popup.dismiss()
+            self.resolve_single_round_accusation()
+            return
+
         popup.dismiss()
 
         accused_player = self.players[accused_index]
@@ -1274,7 +1449,7 @@ class SpyGame(BoxLayout):
                 self.show_spy_guess_popup(accused_player)
                 return # Stop all further processing, wait for guess resolution
 
-            # Hard Mode or Easy Mode (if not guessing): Check for automatic win/loss conditions
+            # Hard Mode: Check for automatic win/loss conditions
             if self.check_win_conditions():
                 return
 
@@ -1337,8 +1512,9 @@ class SpyGame(BoxLayout):
                 self.resume_game_after_wrong_accusation(accused_player, remaining_locals)
 
     def resume_game_after_wrong_accusation(self, wrongly_accused_player, remaining_locals):
+        # This function is ONLY used by EASY/HARD modes
 
-        # FIX: The calculation below was WRONG. It needs to count ACTIVE SPIES, not all active players.
+        # The calculation below was WRONG. It needs to count ACTIVE SPIES, not all active players.
         active_spies = sum(1 for p in self.players if p['is_spy'] and p.get('is_spy_active', True))
 
         content = BoxLayout(orientation='vertical', padding=dp(20), spacing=dp(20))
@@ -1540,6 +1716,8 @@ class SpyGame(BoxLayout):
         self.sm.current = 'game_play'
 
     def start_next_round(self):
+        # This function is ONLY used by EASY/HARD modes
+
         # 1. Reset current player index to *an* active player
         active_player_indices = [i for i, p in enumerate(self.players) if p.get('is_spy_active', True)]
 
@@ -1586,7 +1764,7 @@ class SpyGame(BoxLayout):
 
     def check_word_pool_status(self):
         low_pool_categories = []
-        MIN_WORDS_THRESHOLD = 10 # Set the warning threshold
+        MIN_WORDS_THRESHOLD = 5 # Changed threshold from 10 to 5
 
         for cat in self.selected_categories:
             if cat not in GAME_TOPICS:
@@ -1657,9 +1835,9 @@ class SpyGame(BoxLayout):
         self.secret_word = ""
         self.is_current_player_spy = False
         self.current_player_index = 0
-        # self.accusation_made = False  <-- REMOVED
         self.role_reveal_order = []
         self.gemini_status = ""
+        self.single_round_accusations = set() # Reset SR tracker
 
         # --- Config Preservation ---
         if not preserve_config:
@@ -1679,6 +1857,7 @@ class SpyGame(BoxLayout):
         # Update mode button colors
         self.btn_easy_mode.background_color = ACCENT_GREEN if self.game_mode == "EASY" else LIGHT_BG
         self.btn_hard_mode.background_color = ACCENT_RED if self.game_mode == "HARD" else LIGHT_BG
+        self.btn_single_mode.background_color = ACCENT_YELLOW if self.game_mode == "SINGLE_ROUND" else LIGHT_BG
 
         self.check_word_pool_status()
 

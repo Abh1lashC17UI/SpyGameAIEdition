@@ -1,3 +1,5 @@
+**(fully vibe coded)**
+
 # 🕵️ Spy Game AI Edition (Kivy Mobile Game)
 
 **Spy Game AI Edition** is a full-featured Kivy-based mobile implementation of the popular social deduction game, Spy, but with a few in-house rules added. This project elevates the standard game by integrating the **Gemini API** for dynamic content generation, ensuring endless replayability and a fresh experience every time.
@@ -14,7 +16,7 @@ The application is built entirely in Python using the Kivy framework, resulting 
 * **Secure API Handling:** Features a **runtime API key input screen**; the Gemini key is never embedded in the application code.
 
 ### 🎮 Advanced Game Modes & Logic
-* **Dual Game Modes:** Supports **Easy Mode** (Caught Spies get a final guess) and **Hard Mode** (Spies win only upon achieving numerical parity).
+* **Three Game Modes:** Supports **Easy Mode** (Caught Spies get a final guess), **Hard Mode** (Spies win only upon achieving numerical parity) and **Single Round Mode** (All Spies have to be correctly identified at the end of first round).
 * **Turn Skewing:** Implements an 85% chance for a Local to start Round 1, reducing meta-game predictability.
 * **Word Pool Management:** Tracks used words across sessions and provides a **low-word-count warning** (at 10 words remaining) to prompt AI regeneration.
 * **Multiple Spies:** Fully supports games with two or more spies.

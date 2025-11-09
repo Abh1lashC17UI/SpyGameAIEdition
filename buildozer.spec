@@ -30,7 +30,7 @@ source.exclude_dirs = tests, bin, venv
 source.exclude_patterns = **/pycache/, **/.pyc, **/.pyo, **/.pyx, **/*.pxd, **/tests/*
 
 # (str) Application versioning (method 1)
-version = 2.1
+version = 3.0
 
 # (str) Application versioning (method 2)
 # version.regex = __version__ = ['"](.*)['"]
