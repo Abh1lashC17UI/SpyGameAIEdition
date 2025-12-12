@@ -53,7 +53,7 @@ ACCUSED_COLOR_HEX = '#ffff99'
 # --- Gemini API Configuration ---
 # Leave the key as an empty string; the execution environment will provide credentials.
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
-GEMINI_MODEL = "gemini-2.5-flash-preview-05-20"
+GEMINI_MODEL = "gemini-2.5-flash"
 GEMINI_API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
 
 # --- Game Data ---
